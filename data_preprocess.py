@@ -122,8 +122,12 @@ def process():
     ]
 
     # Extract positive examples (sequences where the TF is known to bind)
-    positive_examples = [extract_sequences(sequences, row['chrom'], row['start'], row['end'], row['strand'])
-                         for _, row in tf_sites.iterrows()]
+    positive_examples = [
+        extract_sequences(
+            sequences, row["chrom"], row["start"], row["end"], row["strand"]
+        )
+        for _, row in tf_sites.iterrows()
+    ]
 
     # Find negative examples
     negative_examples = find_negative_examples(regulatory_regions, tf_sites, sequences)
