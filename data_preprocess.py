@@ -1,3 +1,4 @@
+import math
 import time
 
 import numpy as np
@@ -296,9 +297,96 @@ def get_position_weight_matrix(tf):
                 return pwm_arr2
 
 
+def get_negative_samples(tf):
+    pwm_arr2 = get_position_weight_matrix(tf)
+    filename = "Data/Extracted_Samples/TBP_possible_neg_samples.fasta"
+    list_chrs = ["chr%s" % s for s in range(1, 23)]
+    list_chrs.append("chrX")
+    fileout = f"Data/Extracted_Samples/{tf}_neg_samples.fasta"
+    s_time = time.time()
+    for chom in list_chrs:
+        print("chom: ", chom)
+        logp_thresh = -22
+
+        with open(filename, "r") as fh:
+            with open(fileout, "a") as fout:
+                for seq_record in SeqIO.parse(fh, "fasta"):
+                    if chom != seq_record.id[: seq_record.id.find(":")]:
+                        continue
+                    sequence = seq_record.seq
+                    # print(sequence)
+                    start_time = time.time()
+                    # print("length of the seq:", len(sequence))
+                    count = 0
+                    for j in range(len(sequence) - 20):
+                        # print("j:", j)
+                        count += 1
+                        k = 0
+                        target_seq = sequence[j : j + 20]
+                        if "N" in target_seq:
+                            N_in = "YesN"
+                        else:
+                            N_in = "NoN"
+                        if N_in == "NoN":
+                            if (
+                                target_seq[k + 12] != "G"
+                                and target_seq[k + 12] != "g"
+                                and target_seq[k + 13] != "G"
+                                and target_seq[k + 13] != "g"
+                                and target_seq[k + 14] != "G"
+                                and target_seq[k + 14] != "g"
+                                and target_seq[k + 14] != "C"
+                                and target_seq[k + 14] != "c"
+                                and target_seq[k + 15] != "G"
+                                and target_seq[k + 15] != "g"
+                                and target_seq[k + 15] != "C"
+                                and target_seq[k + 15] != "c"
+                                and target_seq[k + 16] != "G"
+                                and target_seq[k + 16] != "g"
+                                and target_seq[k + 17] != "G"
+                                and target_seq[k + 17] != "g"
+                            ):
+                                # if target_seq[k+2] != "T" and target_seq[k+2] != "t" and target_seq[k+3] != "G" and target_seq[k+3] != "g" and target_seq[k+4] != "T" and target_seq[k+4] != "t" and target_seq[k+9] != "C" and target_seq[k+9] != "c" and target_seq[k+9] != "A" and target_seq[k+9] != "a":
+                                log_prob = 0
+                                for i in range(20):
+                                    if target_seq[i] == "A" or target_seq[i] == "a":
+                                        arr_idx = 0
+                                    elif target_seq[i] == "C" or target_seq[i] == "c":
+                                        arr_idx = 1
+                                    elif target_seq[i] == "G" or target_seq[i] == "g":
+                                        arr_idx = 2
+                                    elif target_seq[i] == "T" or target_seq[i] == "t":
+                                        arr_idx = 3
+                                    else:  # if "N"
+                                        break
+
+                                    # print(pwm_arr2[arr_idx, i])
+                                    log_prob += math.log(pwm_arr2[arr_idx, i])
+                                # print("log_prob:", log_prob)
+                                if log_prob > logp_thresh:  # if sum_logprob > -22
+                                    # print("Written")
+                                    # print(target_seq)
+                                    # print(type(str(target_seq)))
+                                    fout.write(
+                                        f">{seq_record.id}_{j}-{j+20}\n{target_seq}\n"
+                                    )
+                                    # SeqIO.write(target_seq, fout, "fasta")
+                                    # count2 += 1
+                                    # print(count2)
+
+                    # print("count:", count)
+                    end_time = time.time()
+                    time_taken = end_time - start_time
+                    # print("run time:", time_taken)
+    e_time = time.time()
+    r_time = e_time - s_time
+    print("Running time of grid search to identify negative examples:", r_time)
+
+
 if __name__ == "__main__":
     # Merge fasta files
-    merge_fasta_file()
-    identity_positive_examples(tf="TBP")
-    identify_possible_negative_samples(tf="TBP")
-    get_position_weight_matrix(tf="TBP")
+    # merge_fasta_file()
+    # identity_positive_examples(tf="TBP")
+    # identify_possible_negative_samples(tf="TBP")
+    # get_position_weight_matrix(tf="TBP")
+    get_negative_samples(tf="TBP")

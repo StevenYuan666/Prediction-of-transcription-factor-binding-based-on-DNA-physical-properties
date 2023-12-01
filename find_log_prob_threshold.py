@@ -58,11 +58,7 @@ def calculate_negative_samples_log_prob_threshold(tf):
                             arr_idx = 3
                         else:  # if "N"
                             break
-                        try:
-                            log_prob += math.log(pwm_arr2[arr_idx, i])
-                        except:
-                            print(seq_record.id)
-                            print(pwm_arr2[arr_idx, i])
+                        log_prob += math.log(pwm_arr2[arr_idx, i])
                     sum_logprob += log_prob
                     if max_logprob > log_prob:
                         max_logprob = log_prob
