@@ -9,3 +9,4 @@ Data/wgEncodeRegTfbsClusteredV3.GM12878.merged.bed.gz
 .idea/
 description.pdf
 Data/
+*.pyc
