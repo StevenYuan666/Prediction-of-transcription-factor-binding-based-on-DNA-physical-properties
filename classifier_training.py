@@ -1,20 +1,21 @@
-import pandas as pd
-import numpy as np
 import time
+
 import matplotlib.pyplot as plt
-from sklearn.preprocessing import StandardScaler
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.model_selection import KFold
-from sklearn.metrics import accuracy_score
+import numpy as np
+import pandas as pd
 import sklearn
-from utils import set_seed
 from sklearn.linear_model import LogisticRegression
+from sklearn.metrics import accuracy_score
+from sklearn.model_selection import GridSearchCV, KFold
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.pipeline import Pipeline
-from sklearn.model_selection import GridSearchCV
+from sklearn.preprocessing import StandardScaler
+
+from utils import set_seed
 
 
 def preprocess(tf):
-    bad_words = ['>']
+    bad_words = [">"]
     list_DNAprops = ["MGW", "HelT", "Roll", "ProT"]
     print(list_DNAprops)
     # Create textfiles that will later be converted to pandas dataframe
@@ -22,13 +23,13 @@ def preprocess(tf):
         filein = f"Data/DNA_shape/{tf}/neg.{prop}"
         fileout = f"Data/DNA_shape/{tf}/neg.{prop}_processed"
 
-        with open(filein) as oldfile, open(fileout, 'w') as newfile:
+        with open(filein) as oldfile, open(fileout, "w") as newfile:
             n = 20
             list_header = [prop] * n
             # print(list_header)
             for j in range(n):
                 list_header[j] = list_header[j] + str(j + 1)
-            header = ','.join(list_header)
+            header = ",".join(list_header)
             print(header)
             newfile.write(header)
             newfile.write("\n")
@@ -43,7 +44,10 @@ def preprocess(tf):
 
         else:
             df_property_ub = pd.read_csv(files_neg[i])
-            df_properties_ub = pd.concat([df_properties_ub, df_property_ub.reindex(df_properties_ub.index)], axis=1)
+            df_properties_ub = pd.concat(
+                [df_properties_ub, df_property_ub.reindex(df_properties_ub.index)],
+                axis=1,
+            )
 
     print("Negative Data samples:", df_properties_ub.shape)
     df_properties_ub["label"] = "negative"
@@ -54,13 +58,13 @@ def preprocess(tf):
         filein = f"Data/DNA_shape/{tf}/pos.{prop}"
         fileout = f"Data/DNA_shape/{tf}/pos.{prop}_processed"
 
-        with open(filein) as oldfile, open(fileout, 'w') as newfile:
+        with open(filein) as oldfile, open(fileout, "w") as newfile:
             n = 20
             list_header = [prop] * n
             # print(list_header)
             for j in range(n):
                 list_header[j] = list_header[j] + str(j + 1)
-            header = ','.join(list_header)
+            header = ",".join(list_header)
             print(header)
             newfile.write(header)
             newfile.write("\n")
@@ -75,7 +79,9 @@ def preprocess(tf):
             df_properties_b = pd.read_csv(files_pos[i])
         else:
             df_property_b = pd.read_csv(files_pos[i])
-            df_properties_b = pd.concat([df_properties_b, df_property_b.reindex(df_properties_b.index)], axis=1)
+            df_properties_b = pd.concat(
+                [df_properties_b, df_property_b.reindex(df_properties_b.index)], axis=1
+            )
 
     print(df_properties_b.shape)
     df_properties_b["label"] = "bound"
@@ -86,7 +92,7 @@ def preprocess(tf):
     print(df_properties_both.shape)
 
     # Remove columns with all NaN values
-    df_properties_both = df_properties_both.dropna(how='all', axis=1)
+    df_properties_both = df_properties_both.dropna(how="all", axis=1)
     print(df_properties_both.shape)
     return df_properties_both
 
@@ -166,7 +172,7 @@ def train_logistic_regression(data):
 
     k = 5
     kf = KFold(n_splits=k)
-    classifier = LogisticRegression(max_iter=10000, solver='lbfgs')
+    classifier = LogisticRegression(max_iter=10000, solver="lbfgs")
 
     acc_score = []
     for train_index, test_index in kf.split(X):
@@ -189,13 +195,16 @@ def train_logistic_regression(data):
     t_total2 = t_end2 - t_start2
     print("Running time (s):", t_total2)
 
-    pipe = Pipeline([('classifier', LogisticRegression(max_iter=10000, solver='lbfgs'))])
+    pipe = Pipeline(
+        [("classifier", LogisticRegression(max_iter=10000, solver="lbfgs"))]
+    )
     param_grid = [
-        {'classifier': [LogisticRegression(max_iter=10000, solver='lbfgs')],
-         'classifier__penalty': ['l1', 'l2'],  # L1 and L2 regularizations
-         'classifier__C': np.logspace(-4, 4, 20),  # Strengths of regularization
-         'classifier__solver': ['liblinear']
-         }
+        {
+            "classifier": [LogisticRegression(max_iter=10000, solver="lbfgs")],
+            "classifier__penalty": ["l1", "l2"],  # L1 and L2 regularizations
+            "classifier__C": np.logspace(-4, 4, 20),  # Strengths of regularization
+            "classifier__solver": ["liblinear"],
+        }
     ]
 
     # Create a grid search object
