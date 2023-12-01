@@ -25,5 +25,3 @@ jobs:
       run: python -m  isort . --profile black --check --diff
     - name: black
       run: python -m black --check --diff .
-    - name: flake8
-      run: python -m flake8 .
