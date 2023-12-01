@@ -1,142 +1,304 @@
-import os
+import time
 
+import numpy as np
 import pandas as pd
+import pyranges as pr
 from Bio import SeqIO
 
-# Directory containing your data files
-data_directory = "Data"
 
-# File paths
-genome_dir = os.path.join(data_directory, "chromFa")
-regulatory_regions_file = os.path.join(
-    data_directory, "wgEncodeRegTfbsClusteredV3.GM12878.merged.bed"
-)
-tf_binding_sites_file = os.path.join(data_directory, "factorbookMotifPos.txt")
+def identity_positive_examples(tf):
+    start_time = time.time()
 
-# Transcription factor of interest
-your_transcription_factor = "CTCF"
+    file_path = "Data/factorbookMotifPos.txt"
+    with open(file_path, "r") as f:
+        df = pd.read_csv(f, sep="\t", header=None)
 
-FASTA_file_list = [
-    "chr1.fa",
-    "chr2.fa",
-    "chr3.fa",
-    "chr4.fa",
-    "chr5.fa",
-    "chr6.fa",
-    "chr7.fa",
-    "chr8.fa",
-    "chr9.fa",
-    "chr10.fa",
-    "chr11.fa",
-    "chr12.fa",
-    "chr13.fa",
-    "chr14.fa",
-    "chr15.fa",
-    "chr16.fa",
-    "chr17.fa",
-    "chr18.fa",
-    "chr19.fa",
-    "chr20.fa",
-    "chr21.fa",
-    "chr22.fa",
-    "chrX.fa",
-    "chrY.fa",
-]
+    df.columns = ["Field1", "Chromosome", "Start", "End", "TF", "Score", "Strand"]
+    df = df.drop(columns=["Field1", "Score"])  # Drop unnecessary columns
+    df = df[df["Strand"] == "+"]  # Filter for the forward strand
+    df_target = df[df["TF"] == tf]
+    df_target = df_target[df_target["Chromosome"] != "chrY"]
+
+    # Define the order of chromosomes as a categorical type
+    list_chrs = ["chr%s" % s for s in range(1, 23)] + ["chrX"]
+    df_target["Chromosome"] = pd.Categorical(
+        df_target["Chromosome"], categories=list_chrs, ordered=True
+    )
+
+    # Sort the DataFrame by Chromosome in the defined order
+    df_target = df_target.sort_values("Chromosome")
+    df_target = df_target.drop(
+        ["Strand"], axis=1
+    )  # Drop the Strand column as it's no longer needed
+
+    # Extract the genomic coordinates for the transcription factor
+    positive_examples_target = df_target[["Chromosome", "Start", "End"]].values.tolist()
+
+    print(
+        "Length of Target TF binding site:",
+        positive_examples_target[0][2] - positive_examples_target[0][1],
+    )
+    print("Length of Target TF Binding samples:", len(positive_examples_target))
+
+    # Save the sorted DataFrame to a new file
+    output_path = f"Data/Pos_Samples/factorbookMotifPos_{tf}.txt"
+    df_target.to_csv(output_path, sep="\t", index=False, header=False)
+
+    end_time = time.time()
+    print("Running time: ", end_time - start_time)
+
+    return output_path, positive_examples_target
 
 
-# Load all FASTA files into a dictionary
-def load_genome_sequences(genome_dir):
+def merge_fasta_file():
+    chr_list = [f"chr{i}" for i in range(1, 23)] + ["chrX"]
+    for chro in chr_list:
+        print(chro)
+        with open("Data/all_chr.fa", "a") as outfile:
+            with open(f"Data/chromFa/{chro}.fa", "r") as infile:
+                outfile.write(infile.read())
+
+
+def read_fasta_file(fasta_file):
     sequences = {}
-    for filename in os.listdir(genome_dir):
-        if filename in FASTA_file_list:
-            path = os.path.join(genome_dir, filename)
-            with open(path, "r") as fasta_file:
-                for record in SeqIO.parse(fasta_file, "fasta"):
-                    sequences[record.id] = str(record.seq).upper()
+    with open(fasta_file, "r") as file:
+        for record in SeqIO.parse(file, "fasta"):
+            sequences[record.id] = str(record.seq)
     return sequences
 
 
-# Load regulatory regions
-def load_regulatory_regions(filepath):
-    return pd.read_csv(
-        filepath, sep="\t", header=None, names=["chrom", "start", "end", "name"]
-    )
-
-
-# Load transcription factor binding sites
-def load_tf_binding_sites(filepath):
-    return pd.read_csv(
-        filepath,
-        sep="\t",
+def identify_possible_negative_samples(tf):
+    # Create a dataframe from the textfile
+    file_name = "Data/factorbookMotifPos.txt"  # Contains genomic coordinates of positive examples of the target TFs
+    df = pd.read_csv(
+        file_name,
+        usecols=[1, 2, 3, 4, 5, 6],
+        names=["Chom", "TFStart", "TFEnd", "TFName", "ScoreBS", "StrandBS"],
         header=None,
-        names=["ignore", "chrom", "start", "end", "tf_name", "score", "strand"],
+        sep="\t",
+    )
+
+    # Get an overview of the dataframe
+    # Extract rows containing TBP binding sites information
+    df_TF = df[df["TFName"] == tf]
+    df_TF_fwd = df_TF[df_TF["StrandBS"] == "+"]
+    # The bed file: contains active regulatory regions in GM12879 (a cell line derived from lymphoblasts)
+    gr = pr.read_bed("Data/wgEncodeRegTfbsClusteredV3.GM12878.merged.bed")
+    df_bed = gr.df
+
+    # Observe the top and bottom of the bed file
+    # List out all chromosomes
+    list_choms = list(set(df_bed["Chromosome"].to_list()))
+    """The list was created after inspecting the chromosomes contained in the bed file.
+    The list of chromosomes were created as below for ordering (sorting the list of chromosomes generated directly from the bed
+    file dataframe resulted in an undesirable ordering of chromosomes)"""
+    list_chrs = ["chr%s" % s for s in range(1, 23)]
+    list_chrs.append("chrX")
+    ## Before the edit on df_TF_negative
+    start_time_total = time.time()
+    df_TF_negative_all = pd.DataFrame(
+        columns=["Chom", "NStart", "NEnd", "UnboundTF"]
+    )  # An empty dataframe used later
+
+    for chom in list_chrs:  # For each chromosome (chr)
+        start_time = time.time()
+        print(chom)
+
+        # Extract portion of the bed file corresponding to the chromosome
+        df_bed_chom = df_bed[df_bed["Chromosome"] == chom]
+        # print(df_bed_chom.head(10))
+        # Extract portion of the genomic coordinate (of +'ve example) df corresponding to the chr
+        df_TF_chom = df_TF_fwd[df_TF_fwd["Chom"] == chom]
+        # print(df_TF_chom.head(10))
+
+        # Sorting to ensure the dataframe is sorted
+        df_bed_chom_s = df_bed_chom.sort_values("Start")
+        df_TF_chom_s = df_TF_chom.sort_values("TFStart")
+
+        # For reducing running time
+        # Get range for the coordinates of active regulatory regions
+        min_bed = df_bed_chom_s["Start"].min()
+        max_bed = df_bed_chom_s["End"].max()
+
+        # Get range for the coordinates of TF bound sites (positive examples)
+        min_TF = df_TF_chom_s["TFStart"].min()
+        max_TF = df_TF_chom_s["TFEnd"].max()
+
+        """
+        Idea:
+        Negative examples will fall under the active regulatory region.
+        => Potential negative examples will be regions in active regulatory regions that 
+        doesn't loverlap with locations of positive examples
+        i.e. Negative examples can't possibly be anywhere in the active regulatory region
+        that overlaps with positive examples
+        """
+        # Extract all the coordinates of active regulatory region that comes before the
+        # smallest coordinate among the positive examples for the chromosome
+        df_bed_non_top = df_bed_chom_s[df_bed_chom_s["End"] < min_TF]
+        df_bed_non_top = df_bed_non_top.rename(
+            columns={"Chromosome": "Chom", "Start": "NStart", "End": "NEnd"}
+        )
+        if df_bed_non_top.empty == False:
+            df_bed_non_top.loc[:, "UnboundTF"] = tf
+        df_bed_non_top = df_bed_non_top.drop(["Name"], axis=1)
+
+        # Extract all the coordinates of active regulatory region that comes after the
+        # largest coordinate among the positive examples for the chromosome
+        df_bed_non_bottom = df_bed_chom_s[
+            max_TF < df_bed_chom_s["Start"]
+        ]  # need to append these
+        df_bed_non_bottom = df_bed_non_bottom.rename(
+            columns={"Chromosome": "Chom", "Start": "NStart", "End": "NEnd"}
+        )
+        if df_bed_non_bottom.empty == False:
+            df_bed_non_bottom.loc[:, "UnboundTF"] = tf
+        df_bed_non_bottom = df_bed_non_bottom.drop(["Name"], axis=1)
+
+        """
+        min active      minTF                 maxTF            max active
+
+        |=================|----------------------|===============|
+        """
+        # Extract coordinates of active regulatory region that may overlap with coordinates of positive examples
+        df_bed_relev = df_bed_chom_s[df_bed_chom_s["Start"] <= max_TF]
+        df_bed_relev = df_bed_relev[min_TF <= df_bed_relev["End"]]
+
+        # Identify potential regative examples
+        list_cols_TF = list(df_TF_chom_s.columns.values)
+        df_TF_negative = pd.DataFrame(
+            columns=["Chom", "NStart", "NEnd", "UnboundTF"]
+        )  # Create an empty data frame
+
+        count = 0
+        for (
+            index_b,
+            row_b,
+        ) in df_bed_relev.iterrows():  # For each active regulatory region (shortlisted)
+            X = row_b["Start"]
+            Y = row_b["End"]
+
+            df_TF_Inregion = pd.DataFrame(
+                columns=list_cols_TF
+            )  # Create an empty dataframe
+            # Gather any positive examples that may fall within the active regulatory region
+            """
+            X                           Y
+            |======aaaa===aaaa====aaaa==|
+            """
+            for index_TF, row_TF in df_TF_chom_s.iterrows():
+                start = row_TF["TFStart"]
+                end = row_TF["TFEnd"]
+                if (
+                    X <= start and end <= Y
+                ):  # If the coordinates of positive examples fall within the active regulatory region
+                    df_1row = df_TF_chom_s.loc[[index_TF]]
+                    df_TF_Inregion = df_TF_Inregion.append(df_1row)
+
+            # If at least one positive example falls under the active regulatory region
+            if df_TF_Inregion.empty == False:
+                # print(count)
+                df_TF_Inregion_r = df_TF_Inregion.reset_index()
+
+                idx_count = df_TF_Inregion_r.shape[0]
+
+                for index_InR, row_InR in df_TF_Inregion_r.iterrows():
+                    st = row_InR["TFStart"]
+                    ed = row_InR["TFEnd"]
+
+                    if index_InR == 0:  # If it's the first row
+                        new_row1 = {
+                            "Chom": chom,
+                            "NStart": X,
+                            "NEnd": st - 1,
+                            "UnboundTF": tf,
+                        }
+                        df_TF_negative = df_TF_negative.append(
+                            new_row1, ignore_index=True
+                        )
+
+                    if index_InR == idx_count - 1:  # If it's the last row
+                        new_row2 = {
+                            "Chom": chom,
+                            "NStart": ed + 1,
+                            "NEnd": Y,
+                            "UnboundTF": tf,
+                        }
+                        df_TF_negative = df_TF_negative.append(
+                            new_row2, ignore_index=True
+                        )
+                        break
+                    else:  # If there are multiple binding sites within a region and if the row is not the last row
+                        st_2 = int(df_TF_Inregion_r.loc[[index_InR + 1]].TFStart)
+                        ed_2 = int(df_TF_Inregion_r.loc[[index_InR + 1]].TFEnd)
+                        if st_2 > ed:  # If the TF binding sites don't overlap
+                            new_row = {
+                                "Chom": chom,
+                                "NStart": ed + 1,
+                                "NEnd": st_2 - 1,
+                                "UnboundTF": tf,
+                            }
+                            df_TF_negative = df_TF_negative.append(
+                                new_row, ignore_index=True
+                            )
+
+            count += 1
+
+            # Create a dataframe that contains all the negative examples
+        all_negative_dfs = [df_bed_non_top, df_TF_negative, df_bed_non_bottom]
+        df_negative_all = pd.concat(all_negative_dfs).reset_index(drop=True)
+        end_time = time.time()
+        run_time = end_time - start_time
+        print("Running time for {}: {}".format(chom, run_time))
+
+        frames = [df_TF_negative_all, df_negative_all]
+        df_TF_negative_all = pd.concat(frames).reset_index(drop=True)
+
+    end_time_total = time.time()
+    run_time_total = end_time_total - start_time_total
+    print(df_TF_negative_all.shape)
+    print("Total running time: ", run_time_total)
+    df_TF_negative_all.to_csv(
+        f"Data/Neg_Samples/factorbookMotifNeg_{tf}.txt",
+        sep="\t",
+        index=False,
+        header=False,
     )
 
 
-# Extract sequences based on coordinates
-def extract_sequences(sequences, chrom, start, end, strand):
-    seq = sequences[chrom][start:end]
-    return seq[::-1].translate(str.maketrans("ACGT", "TGCA")) if strand == "-" else seq
+def get_position_weight_matrix(tf):
+    # Note: factorbookMotifPwm.txt contains PWM of all TFs that was listed in Part 1
 
-
-# Find negative examples
-def find_negative_examples(regulatory_regions, tf_sites, sequences):
-    negative_examples = []
-    for _, region in regulatory_regions.iterrows():
-        # Check if the region overlaps with any TF binding site
-        overlaps = tf_sites[
-            (tf_sites["chrom"] == region["chrom"])
-            & (tf_sites["start"] < region["end"])
-            & (tf_sites["end"] > region["start"])
-        ]
-        if overlaps.empty:
-            # If no overlap, this is a negative example
-            seq = extract_sequences(
-                sequences, region["chrom"], region["start"], region["end"], None
-            )
-            negative_examples.append(seq)
-    return negative_examples
-
-
-def print_unique_transcription_factors(tf_binding_sites):
-    unique_tfs = tf_binding_sites["tf_name"].unique()
-    print(f"There are {len(unique_tfs)} unique transcription factors.")
-    return unique_tfs
-
-
-# Main function to process the data
-def process():
-    # Load genomic sequences
-    sequences = load_genome_sequences(genome_dir)
-
-    # Load regulatory regions and TF binding sites
-    regulatory_regions = load_regulatory_regions(regulatory_regions_file)
-    tf_binding_sites = load_tf_binding_sites(tf_binding_sites_file)
-
-    # Print unique transcription factors
-    print_unique_transcription_factors(tf_binding_sites)
-
-    # Filter for the specific TF
-    tf_sites = tf_binding_sites[
-        tf_binding_sites["tf_name"] == your_transcription_factor
-    ]
-
-    # Extract positive examples (sequences where the TF is known to bind)
-    positive_examples = [
-        extract_sequences(
-            sequences, row["chrom"], row["start"], row["end"], row["strand"]
-        )
-        for _, row in tf_sites.iterrows()
-    ]
-
-    # Find negative examples
-    negative_examples = find_negative_examples(regulatory_regions, tf_sites, sequences)
-
-    # Now positive_examples and negative_examples contain the sequences for your ML model
-
-    print("Positive examples: ", len(positive_examples))
-    print("Negative examples: ", len(negative_examples))
+    # Obtain PWM of the TF of interest
+    with open("Data/factorbookMotifPwm.txt") as f:
+        for line in f:
+            if tf in line:  # If the line is for the TF
+                line = line.split(",")
+                for i in range(len(line)):
+                    if i == 0:
+                        tf_name = line[i].split("\t")[0]
+                        tf_len = line[i].split("\t")[1]
+                        tf_len = int(tf_len)
+                        line[i] = line[i].split("\t")[-1]
+                    else:
+                        line[i] = line[i].replace("\t", "")
+                del line[-1]
+                print(tf_name)
+                print(len(line))
+                line_int = [float(i) for i in line]
+                # Convert to a numpy array
+                pwm_arr = np.array(line_int)
+                pwm_arr.astype(int)
+                pwm_arr2 = np.reshape(pwm_arr, (4, tf_len))
+                print(pwm_arr2)
+                print(
+                    np.sum(pwm_arr2, axis=0)
+                )  # Validating that the PWM makes sense (columns add up to 1)
+                return pwm_arr2
 
 
 if __name__ == "__main__":
-    process()
+    # Merge fasta files
+    merge_fasta_file()
+    identity_positive_examples(tf="TBP")
+    identify_possible_negative_samples(tf="TBP")
+    get_position_weight_matrix(tf="TBP")
