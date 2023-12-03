@@ -1,5 +1,5 @@
 import torch
-from torch.utils.data import Dataset, DataLoader
+from torch.utils.data import DataLoader, Dataset
 
 
 class DNAPropertiesDataset(Dataset):
@@ -7,11 +7,13 @@ class DNAPropertiesDataset(Dataset):
         self.dataframe = dataframe
 
         # Convert labels to integers (0 for 'negative', 1 for 'bound')
-        self.dataframe['label'] = self.dataframe['label'].map({'negative': 0, 'bound': 1})
+        self.dataframe["label"] = self.dataframe["label"].map(
+            {"negative": 0, "bound": 1}
+        )
 
         # Separate features and labels
-        self.features = self.dataframe.drop('label', axis=1).values
-        self.labels = self.dataframe['label'].values
+        self.features = self.dataframe.drop("label", axis=1).values
+        self.labels = self.dataframe["label"].values
 
     def __len__(self):
         return len(self.dataframe)
@@ -35,6 +37,7 @@ def get_data_loader(df, batch_size=32, shuffle=True):
 
 if __name__ == "__main__":
     from classifier_training import preprocess
+
     tf = "TBP"
     df_properties_both = preprocess(tf)
     data_loader = get_data_loader(df_properties_both)

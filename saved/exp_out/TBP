@@ -1,0 +1,20 @@
+KNN
+Mean: 0.6357357504491262
+Standard deviation: 0.008724648082215495
+--------------------
+Logistic Regression
+Mean: 0.6987179487179487
+Standard deviation: 0.03930694799168178
+--------------------
+SVM
+Mean: 0.7006369426751593
+Standard deviation: 0.030413595888696392
+--------------------
+DNN
+Mean: 0.7030612244897958
+Standard deviation: 0.008888393566420568
+--------------------
+Transformer
+Mean: 0.7561224489795919
+Standard deviation: 0.00874073556072032
+--------------------
